@@ -1,149 +1,134 @@
-# Cloudflare Let's Encrypt Cert Renewer
+# Cert Renewer v2
 
-![Cloudflare Let's Encrypt Cert Renewer](readme.png)
+A small always-on service that issues and renews multiple independent Let's
+Encrypt certificates through Cloudflare DNS-01. It supports wildcard domains,
+atomic certificate installation, Docker Compose, and systemd.
 
-*Scroll down for Russian version / Прокрутите вниз для версии на русском языке*
+## English
 
----
+### Configuration
 
-An automated SSL certificate renewer container using Certbot with the Cloudflare DNS-01 challenge. When certificates are issued or renewed, the container copies the new certificates to a target directory and restarts/reloads Nginx using the Docker socket.
+Copy `examples/config.toml`. One daemon can contain any number of certificate
+lineages:
 
-## Features
+```toml
+email = "ops@example.com"
+state_dir = "/var/lib/cert-renewer"
+interval_seconds = 43200
+renewal_threshold_seconds = 2592000
 
-- **DNS-01 Challenge**: Automates Let's Encrypt validation via Cloudflare DNS APIs (no need to expose port 80/443 for validation).
-- **Wildcard Certificate Support**: Easily request and renew wildcard certificates (`*.domain.com`).
-- **Auto-Installation**: Automatically copies certificates to Nginx target directory upon renewal.
-- **Graceful Nginx Reload**: Signals Nginx to reload (`HUP` signal) through the Docker socket connection so new certificates are applied without downtime.
+[[certificates]]
+name = "example.com"
+domains = ["example.com", "*.example.com"]
+token_file = "/run/secrets/cloudflare-example"
+destination = "/certificates/example.com"
+propagation_seconds = 90
 
-## Directory Structure
+[certificates.reload]
+kind = "none"
 
-```
-cert-renewer/
-├── Dockerfile
-├── install-cert.sh
-├── renew-cert.sh
-└── RUNBOOK_TLS.md
-```
+[[certificates]]
+name = "example.kz"
+domains = ["example.kz", "www.example.kz"]
+token_file = "/run/secrets/cloudflare-kz"
+destination = "/certificates/example.kz"
 
-## Environment Variables
-
-| Variable | Description | Default / Required |
-| --- | --- | --- |
-| `CERTBOT_CERT_NAME` | The name of the certbot certificate (often the primary domain). | **Required** |
-| `CERTBOT_PRIMARY_DOMAIN` | The primary domain to secure (e.g. `domain.com`). | **Required** |
-| `CERTBOT_EXTRA_DOMAINS` | Comma-separated list of additional domains (e.g. `*.domain.com,admin.domain.com`). | **Required** |
-| `CLOUDFLARE_API_TOKEN_FILE` | Path to the file containing your Cloudflare API token. | `/run/secrets/cloudflare_api_token` |
-| `CERTBOT_RENEW_INTERVAL_SECONDS` | Interval between renewal checks. | `43200` (12 hours) |
-| `CERTBOT_PROPAGATION_SECONDS` | Cloudflare DNS record propagation wait time. | `90` |
-| `NGINX_CERT_TARGET_DIR` | Directory where certificates will be written for Nginx. | `/out` |
-| `NGINX_CONTAINER_NAME` | Name of the Nginx container to reload. | `nginx` |
-| `DOCKER_SOCKET_PATH` | Path to the Docker socket inside the container. | `/var/run/docker.sock` |
-
-## Deployment
-
-### Docker Compose Setup
-
-Ensure you mount the Docker socket so the container can reload Nginx:
-
-```yaml
-services:
-  cert-renewer:
-    build:
-      context: ./cert-renewer
-    container_name: cert-renewer
-    environment:
-      CERTBOT_CERT_NAME: "yourdomain"
-      CERTBOT_PRIMARY_DOMAIN: "yourdomain.com"
-      CERTBOT_EXTRA_DOMAINS: "*.yourdomain.com,admin.yourdomain.com"
-      NGINX_CONTAINER_NAME: "nginx"
-      NGINX_CERT_TARGET_DIR: "/etc/nginx/certs"
-      DOCKER_SOCKET_PATH: "/var/run/docker.sock"
-    secrets:
-      - cloudflare_api_token
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - certs_volume:/etc/letsencrypt
-      - nginx_certs_volume:/etc/nginx/certs
-    restart: unless-stopped
-
-secrets:
-  cloudflare_api_token:
-    file: ./secrets/cloudflare_api_token.txt
-
-volumes:
-  certs_volume:
-  nginx_certs_volume:
+[certificates.reload]
+kind = "command"
+argv = ["systemctl", "reload", "nginx"]
 ```
 
----
+Each token file contains only a Cloudflare API token with `Zone:DNS:Edit` and
+`Zone:Zone:Read` for the required zone. Set mode `0600`. Tokens are never placed
+in TOML, command arguments, status files, or logs.
 
-# Автоматическое обновление Let's Encrypt через Cloudflare DNS
+Commands:
 
-Автоматизированный контейнер для выпуска и продления SSL-сертификатов Let's Encrypt с использованием DNS-01 проверки через API Cloudflare. После успешного обновления контейнер копирует новые сертификаты в общую папку и перезапускает Nginx через Docker-сокет без простоя.
-
-## Возможности
-
-- **Проверка DNS-01**: Проходит проверку Let's Encrypt через DNS-записи Cloudflare (не требуется открывать порты 80/443 для проверки).
-- **Поддержка Wildcard**: Возможность выпуска сертификатов вида `*.yourdomain.com`.
-- **Автоматическая установка**: Копирует обновленные сертификаты в целевую папку Nginx.
-- **Перезагрузка Nginx без простоя**: Отправляет сигнал `HUP` в контейнер Nginx через Docker-сокет для применения новых сертификатов без остановки сервиса.
-
-## Структура каталога
-
-```
-cert-renewer/
-├── Dockerfile
-├── install-cert.sh
-├── renew-cert.sh
-└── RUNBOOK_TLS.md
+```bash
+python3 -m cert_renewer check --config /etc/cert-renewer/config.toml
+python3 -m cert_renewer once --config /etc/cert-renewer/config.toml
+python3 -m cert_renewer run --config /etc/cert-renewer/config.toml
+python3 -m cert_renewer health --config /etc/cert-renewer/config.toml
 ```
 
-## Переменные окружения
+`check` is read-only. `once` performs one cycle. `run` stays alive and retries.
+`health` validates the freshness and outcome of `status.json`.
 
-| Переменная | Описание | Значение по умолчанию |
-| --- | --- | --- |
-| `CERTBOT_CERT_NAME` | Имя сертификата в Certbot (обычно основной домен). | **Обязательно** |
-| `CERTBOT_PRIMARY_DOMAIN` | Основной домен для сертификата (например, `domain.com`). | **Обязательно** |
-| `CERTBOT_EXTRA_DOMAINS` | Список дополнительных доменов через запятую (например, `*.domain.com,admin.domain.com`). | **Обязательно** |
-| `CLOUDFLARE_API_TOKEN_FILE` | Путь к файлу с токеном API Cloudflare. | `/run/secrets/cloudflare_api_token` |
-| `CERTBOT_RENEW_INTERVAL_SECONDS` | Частота проверок необходимости обновления. | `43200` (12 часов) |
-| `CERTBOT_PROPAGATION_SECONDS` | Ожидание обновления DNS-записей Cloudflare. | `90` |
-| `NGINX_CERT_TARGET_DIR` | Папка, куда копируются готовые сертификаты для Nginx. | `/out` |
-| `NGINX_CONTAINER_NAME` | Имя контейнера Nginx, который нужно перезагрузить. | `nginx` |
-| `DOCKER_SOCKET_PATH` | Путь к сокету Docker внутри контейнера. | `/var/run/docker.sock` |
+### Docker Compose
 
-## Запуск
-
-### Настройка через Docker Compose
-
-Для работы автоперезапуска Nginx необходимо смонтировать Docker-сокет:
-
-```yaml
-services:
-  cert-renewer:
-    build:
-      context: ./cert-renewer
-    container_name: cert-renewer
-    environment:
-      CERTBOT_CERT_NAME: "yourdomain"
-      CERTBOT_PRIMARY_DOMAIN: "yourdomain.com"
-      CERTBOT_EXTRA_DOMAINS: "*.yourdomain.com,admin.yourdomain.com"
-      NGINX_CONTAINER_NAME: "nginx"
-      NGINX_CERT_TARGET_DIR: "/etc/nginx/certs"
-      DOCKER_SOCKET_PATH: "/var/run/docker.sock"
-    secrets:
-      - cloudflare_api_token
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - certs_volume:/etc/letsencrypt
-      - nginx_certs_volume:/etc/nginx/certs
-    restart: unless-stopped
-
-secrets:
-  cloudflare_api_token:
-    file: ./secrets/cloudflare_api_token.txt
-
-volumes:
-  certs_volume:
-  nginx_certs_volume:
+```bash
+cp docker/config.example.toml docker/config.toml
+mkdir -p docker/secrets
+install -m 0600 /path/to/token docker/secrets/cloudflare-example
+docker compose -f docker/compose.yaml up -d --build
+docker compose -f docker/compose.yaml logs -f cert-renewer
 ```
+
+The default Docker Compose file does not mount the Docker socket. Use shared
+certificate volumes and let the reverse proxy reload externally. If the
+`docker-signal` reload action is required, explicitly add
+`-f docker/compose.socket.yaml`. Docker socket access is effectively host-root
+access; use the override only on a trusted single-purpose host.
+
+### systemd
+
+```bash
+sudo ./systemd/install.sh
+sudoedit /etc/cert-renewer/config.toml
+sudo PYTHONPATH=/opt/cert-renewer/src python3 -m cert_renewer check --config /etc/cert-renewer/config.toml
+sudo ./systemd/install.sh --enable
+systemctl status cert-renewer
+```
+
+The installer preserves an existing configuration.
+
+### Staging ACME test
+
+Before production issuance, set:
+
+```toml
+acme_server = "https://acme-staging-v02.api.letsencrypt.org/directory"
+```
+
+Run `once`, inspect the resulting lineage, then remove the override and run
+`once` again for a trusted production certificate. See `RUNBOOK_TLS.md` for
+recovery and token rotation.
+
+### Migration from v1
+
+Stop the old container but preserve `/etc/letsencrypt`. Convert variables as
+follows: `CERTBOT_CERT_NAME` becomes `certificates.name`;
+`CERTBOT_PRIMARY_DOMAIN` and `CERTBOT_EXTRA_DOMAINS` become the
+`certificates.domains` array; `CLOUDFLARE_API_TOKEN_FILE` becomes
+`certificates.token_file`; `CERTBOT_RENEW_INTERVAL_SECONDS` becomes root
+`interval_seconds`; `CERTBOT_PROPAGATION_SECONDS` becomes
+`certificates.propagation_seconds`; `NGINX_CERT_TARGET_DIR` becomes
+`certificates.destination`; `NGINX_CONTAINER_NAME` and `DOCKER_SOCKET_PATH`
+become fields of `certificates.reload`. Add one `[[certificates]]` table for
+every former container, run `check`, test with staging ACME, then run `once`.
+
+## Русский
+
+Cert Renewer — постоянно работающий сервис для нескольких независимых
+сертификатов Let's Encrypt через Cloudflare DNS-01. Обычные и wildcard-домены
+задаются массивом `[[certificates]]` в TOML. Ошибка одного сертификата не
+останавливает остальные.
+
+Для Docker скопируйте `docker/config.example.toml` в `docker/config.toml`,
+положите токены с правами `0600` в `docker/secrets` и запустите:
+
+```bash
+docker compose -f docker/compose.yaml up -d --build
+```
+
+Для systemd выполните `sudo ./systemd/install.sh`, настройте
+`/etc/cert-renewer/config.toml`, проверьте командой `check`, затем включите
+`sudo ./systemd/install.sh --enable`.
+
+Режимы: `check` проверяет окружение без выпуска; `once` выполняет один цикл;
+`run` работает постоянно; `health` проверяет свежесть `status.json`.
+
+Docker socket по умолчанию не подключён. Опциональный override нужен только для
+`docker-signal` и даёт контейнеру высокий уровень доступа к Docker daemon.
+Перед production используйте staging ACME URL из раздела выше. Восстановление,
+ротация токена и диагностика описаны в `RUNBOOK_TLS.md`.

@@ -1,0 +1,25 @@
+name: cert-renewer
+
+services:
+  cert-renewer:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: cert-renewer:2.0.0
+    restart: unless-stopped
+    command: ["run", "--config", "/config/config.toml"]
+    volumes:
+      - ./config.toml:/config/config.toml:ro
+      - ./secrets:/run/secrets:ro
+      - certbot-config:/etc/letsencrypt
+      - certbot-work:/var/lib/letsencrypt
+      - certbot-logs:/var/log/letsencrypt
+      - state:/var/lib/cert-renewer
+      - certificates:/certificates
+
+volumes:
+  certbot-config:
+  certbot-work:
+  certbot-logs:
+  state:
+  certificates:

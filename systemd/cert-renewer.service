@@ -1,0 +1,24 @@
+[Unit]
+Description=Let's Encrypt multi-certificate renewer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=PYTHONPATH=/opt/cert-renewer/src
+ExecStartPre=/usr/bin/python3 -m cert_renewer check --config /etc/cert-renewer/config.toml
+ExecStart=/usr/bin/python3 -m cert_renewer run --config /etc/cert-renewer/config.toml
+Restart=on-failure
+RestartSec=30s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

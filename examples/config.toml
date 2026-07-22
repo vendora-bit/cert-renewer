@@ -1,0 +1,22 @@
+email = "ops@example.com"
+state_dir = "/var/lib/cert-renewer"
+interval_seconds = 43200
+renewal_threshold_seconds = 2592000
+
+[[certificates]]
+name = "example.com"
+domains = ["example.com", "*.example.com"]
+token_file = "/run/secrets/cloudflare-example"
+destination = "/etc/nginx/certs/example.com"
+propagation_seconds = 90
+[certificates.reload]
+kind = "command"
+argv = ["systemctl", "reload", "nginx"]
+
+[[certificates]]
+name = "example.kz"
+domains = ["example.kz", "www.example.kz"]
+token_file = "/run/secrets/cloudflare-example-kz"
+destination = "/etc/nginx/certs/example.kz"
+[certificates.reload]
+kind = "none"
