@@ -153,4 +153,5 @@ Released under [Apache-2.0](LICENSE). Security reports are handled according to
 
 ## Related tools
 
-- [ddns-updater](https://github.com/vendora-bit/ddns-updater) — keep Cloudflare A records aligned with a changing public IPv4 address.
+- [ddns-updater](https://github.com/vendora-bit/ddns-updater) — Cloudflare DDNS Lite for changing A and AAAA records.
+- [Cloudflare DDNS + wildcard TLS home-server stack](https://github.com/vendora-bit/ddns-updater/tree/main/examples/home-server-stack) — run DDNS, cert-renewer and Nginx as separate socket-free services.
