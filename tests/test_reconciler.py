@@ -9,7 +9,6 @@ from cert_renewer.config import load_config
 from cert_renewer.reconciler import Reconciler
 from cert_renewer.status import StatusStore
 
-
 CONFIG = """
 email = "ops@example.com"
 state_dir = "{state}"

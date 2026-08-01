@@ -1,12 +1,12 @@
 import argparse
 import fcntl
 import json
-import os
 import shutil
 import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TextIO
 
 from .certificate import CertificateManager
 from .config import ConfigError, load_config
@@ -21,15 +21,16 @@ class ServiceLockError(RuntimeError):
 class ServiceLock:
     def __init__(self, path: Path):
         self.path = path
-        self.handle = None
+        self.handle: TextIO | None = None
 
     def acquire(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.handle = self.path.open("a+")
+        handle = self.path.open("a+")
+        self.handle = handle
         try:
-            fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            self.handle.close()
+            handle.close()
             self.handle = None
             raise ServiceLockError("another cert-renewer process is running") from exc
 
@@ -59,9 +60,16 @@ def check_environment(config) -> list[str]:
             errors.append(f"executable not found: {executable}")
     for cert in config.certificates:
         try:
+            if cert.token_file.is_symlink() or not cert.token_file.is_file():
+                errors.append(f"token file must be a regular non-symlink file: {cert.token_file}")
+                continue
             mode = cert.token_file.stat().st_mode & 0o777
             if mode & 0o077:
                 errors.append(f"token file permissions must be 0600 or stricter: {cert.token_file}")
+            raw_token = cert.token_file.read_text(encoding="utf-8")
+            lines = raw_token.splitlines()
+            if len(lines) != 1 or not lines[0] or lines[0] != lines[0].strip():
+                errors.append(f"token file must contain one nonempty line: {cert.token_file}")
         except OSError as exc:
             errors.append(f"token file unavailable: {cert.token_file}: {exc}")
     return errors

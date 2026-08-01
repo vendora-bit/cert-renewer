@@ -1,5 +1,6 @@
 import json
 import os
+import secrets
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -12,16 +13,24 @@ class StatusStore:
 
     def write_raw(self, payload: dict[str, Any]) -> None:
         self.state_dir.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_name(f".status.{os.getpid()}.tmp")
+        temporary = self.path.with_name(f".status.{secrets.token_hex(12)}.tmp")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        created = False
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
         try:
-            with temporary.open("w", encoding="utf-8") as handle:
+            descriptor = os.open(temporary, flags, 0o600)
+            created = True
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 json.dump(payload, handle, sort_keys=True, separators=(",", ":"))
                 handle.write("\n")
                 handle.flush()
                 os.fsync(handle.fileno())
+            os.chmod(temporary, 0o600)
             os.replace(temporary, self.path)
         finally:
-            temporary.unlink(missing_ok=True)
+            if created:
+                temporary.unlink(missing_ok=True)
 
     def healthy(self, max_age_seconds: int) -> bool:
         try:

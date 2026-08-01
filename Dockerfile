@@ -6,7 +6,14 @@ ENV PYTHONPATH=/app/src \
 WORKDIR /app
 COPY src/ /app/src/
 COPY docker/entrypoint.sh /usr/local/bin/cert-renewer-entrypoint
-RUN chmod 0755 /usr/local/bin/cert-renewer-entrypoint
+RUN addgroup -S -g 65532 cert-renewer \
+    && adduser -S -D -H -u 65532 -G cert-renewer cert-renewer \
+    && install -d -o cert-renewer -g cert-renewer -m 0755 \
+      /etc/letsencrypt /var/lib/letsencrypt /var/log/letsencrypt \
+      /var/lib/cert-renewer /certificates \
+    && chmod 0755 /usr/local/bin/cert-renewer-entrypoint
+
+USER 65532:65532
 
 HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
   CMD ["python", "-m", "cert_renewer", "health", "--config", "/config/config.toml"]

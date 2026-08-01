@@ -1,0 +1,11 @@
+.git
+.github
+.env
+.DS_Store
+._*
+__pycache__
+*.py[cod]
+.worktrees
+docs
+docker/config.toml
+docker/secrets

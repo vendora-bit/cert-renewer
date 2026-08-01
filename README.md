@@ -40,7 +40,16 @@ argv = ["systemctl", "reload", "nginx"]
 
 Each token file contains only a Cloudflare API token with `Zone:DNS:Edit` and
 `Zone:Zone:Read` for the required zone. Set mode `0600`. Tokens are never placed
-in TOML, command arguments, status files, or logs.
+in TOML, command arguments, status files, or logs. The temporary Certbot
+credentials file is removed after every invocation.
+
+Changing the configured SAN set triggers an immediate reissue even when the
+certificate is not close to expiry. Installations are stored under
+`destination/revisions/<digest>/`; the `destination/current` symlink is switched
+atomically only after both files are durable. Compatibility links remain at
+`destination/fullchain.pem` and `destination/privkey.pem`. Reload progress is
+persisted separately, so a failed reload is retried on the next cycle without
+requiring another renewal.
 
 Commands:
 
@@ -59,7 +68,7 @@ python3 -m cert_renewer health --config /etc/cert-renewer/config.toml
 ```bash
 cp docker/config.example.toml docker/config.toml
 mkdir -p docker/secrets
-install -m 0600 /path/to/token docker/secrets/cloudflare-example
+sudo install -o 65532 -g 65532 -m 0400 /path/to/token docker/secrets/cloudflare-example
 docker compose -f docker/compose.yaml up -d --build
 docker compose -f docker/compose.yaml logs -f cert-renewer
 ```
@@ -67,8 +76,10 @@ docker compose -f docker/compose.yaml logs -f cert-renewer
 The default Docker Compose file does not mount the Docker socket. Use shared
 certificate volumes and let the reverse proxy reload externally. If the
 `docker-signal` reload action is required, explicitly add
-`-f docker/compose.socket.yaml`. Docker socket access is effectively host-root
-access; use the override only on a trusted single-purpose host.
+`-f docker/compose.socket.yaml` and set `DOCKER_GID` to the socket's host group
+ID. Docker socket access is effectively host-root access; use the override only
+on a trusted single-purpose host. The normal container runs as UID/GID 65532,
+with a read-only root filesystem, no Linux capabilities, and no-new-privileges.
 
 ### systemd
 
@@ -81,6 +92,11 @@ systemctl status cert-renewer
 ```
 
 The installer preserves an existing configuration.
+It runs the daemon as the dedicated `cert-renewer` user. Token files must be
+owned and readable by that user only. If destinations differ from
+`/etc/nginx/certs`, add them to a systemd drop-in `ReadWritePaths=` setting and
+grant the service user write access. Privileged reload commands should be
+exposed through a narrowly scoped helper; do not run the whole daemon as root.
 
 ### Staging ACME test
 
@@ -93,6 +109,11 @@ acme_server = "https://acme-staging-v02.api.letsencrypt.org/directory"
 Run `once`, inspect the resulting lineage, then remove the override and run
 `once` again for a trusted production certificate. See `RUNBOOK_TLS.md` for
 recovery and token rotation.
+
+CI also performs an isolated end-to-end issuance against the official Pebble
+ACME test server. It exercises real Certbot account/order/finalization behavior,
+lineage validation, atomic installation, status, and health without external
+Cloudflare or Let's Encrypt credentials.
 
 ### Migration from v1
 
@@ -130,5 +151,8 @@ docker compose -f docker/compose.yaml up -d --build
 
 Docker socket по умолчанию не подключён. Опциональный override нужен только для
 `docker-signal` и даёт контейнеру высокий уровень доступа к Docker daemon.
+Контейнер и systemd-сервис работают не от root. Новая пара ключ/сертификат
+собирается в отдельной revision и переключается атомарно; неудачный reload
+сохраняется как ожидающий и повторяется в следующем цикле.
 Перед production используйте staging ACME URL из раздела выше. Восстановление,
 ротация токена и диагностика описаны в `RUNBOOK_TLS.md`.

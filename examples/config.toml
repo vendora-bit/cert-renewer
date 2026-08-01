@@ -10,8 +10,7 @@ token_file = "/run/secrets/cloudflare-example"
 destination = "/etc/nginx/certs/example.com"
 propagation_seconds = 90
 [certificates.reload]
-kind = "command"
-argv = ["systemctl", "reload", "nginx"]
+kind = "none"
 
 [[certificates]]
 name = "example.kz"

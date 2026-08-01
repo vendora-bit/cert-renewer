@@ -5,7 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
+User=cert-renewer
+Group=cert-renewer
 Environment=PYTHONPATH=/opt/cert-renewer/src
 ExecStartPre=/usr/bin/python3 -m cert_renewer check --config /etc/cert-renewer/config.toml
 ExecStart=/usr/bin/python3 -m cert_renewer run --config /etc/cert-renewer/config.toml
@@ -14,10 +15,19 @@ RestartSec=30s
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/etc/letsencrypt /var/lib/letsencrypt /var/log/letsencrypt /var/lib/cert-renewer -/etc/nginx/certs
+PrivateDevices=true
 ProtectKernelLogs=true
 ProtectKernelModules=true
 ProtectKernelTunables=true
 RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
 UMask=0077
 
 [Install]

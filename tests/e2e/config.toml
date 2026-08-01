@@ -1,0 +1,20 @@
+email = "integration@example.com"
+acme_server = "https://pebble:14000/dir"
+interval_seconds = 60
+renewal_threshold_seconds = 2592000
+retry_seconds = 5
+state_dir = "/var/lib/cert-renewer"
+certbot_config_dir = "/etc/letsencrypt"
+certbot_work_dir = "/var/lib/letsencrypt"
+certbot_logs_dir = "/var/log/letsencrypt"
+certbot_executable = "/test/certbot-wrapper.sh"
+
+[[certificates]]
+name = "e2e.example"
+domains = ["e2e.example", "*.e2e.example"]
+token_file = "/test/cloudflare-token"
+destination = "/certificates/e2e.example"
+propagation_seconds = 10
+
+[certificates.reload]
+kind = "none"

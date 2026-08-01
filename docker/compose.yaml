@@ -7,6 +7,13 @@ services:
       dockerfile: Dockerfile
     image: cert-renewer:2.0.0
     restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
     command: ["run", "--config", "/config/config.toml"]
     volumes:
       - ./config.toml:/config/config.toml:ro

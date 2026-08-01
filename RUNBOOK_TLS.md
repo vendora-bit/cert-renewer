@@ -20,7 +20,11 @@ Run `check`, then `once`. A failure in one lineage does not block others. Never
 delete `/etc/letsencrypt`; restore it from backup or let Certbot reuse lineages.
 
 If Nginx still serves an old certificate, compare the installed file, verify the
-configured destination, run `nginx -t`, and execute the configured reload command.
+configured destination, inspect `state/deployments/<name>.json` for
+`reload_pending`, run `nginx -t`, and execute the configured reload command.
+The daemon retries a pending reload automatically. Point strict consumers at
+`destination/current/fullchain.pem` and `destination/current/privkey.pem`; the
+top-level compatibility links resolve to that same atomic revision.
 
 ## Token rotation
 
@@ -40,6 +44,9 @@ must never be pasted into config or logs.
 Не удаляйте `/etc/letsencrypt`. Исправьте причину ошибки конкретного lineage и
 повторите `once`; остальные сертификаты продолжают обслуживаться. Если Nginx
 показывает старый сертификат, сравните target-файлы, выполните `nginx -t` и reload.
+Также проверьте `deployments/<name>.json`: состояние `reload_pending` будет
+автоматически повторено. Для строгой атомарности используйте файлы через
+`destination/current/`.
 
 ## Ротация токена
 

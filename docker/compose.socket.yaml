@@ -1,4 +1,6 @@
 services:
   cert-renewer:
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID to the host docker socket group id}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

@@ -14,11 +14,19 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(dirname "$SCRIPT_DIR")
 APP_DIR=/opt/cert-renewer
 CONFIG_DIR=/etc/cert-renewer
 CONFIG_PATH=$CONFIG_DIR/config.toml
+SERVICE_USER=cert-renewer
+
+if ! getent group "$SERVICE_USER" >/dev/null; then
+  groupadd --system "$SERVICE_USER"
+fi
+if ! getent passwd "$SERVICE_USER" >/dev/null; then
+  useradd --system --gid "$SERVICE_USER" --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE_USER"
+fi
 
 install -d -m 0755 "$APP_DIR/src" "$CONFIG_DIR"
 rm -rf "$APP_DIR/src/cert_renewer"
@@ -28,8 +36,14 @@ find "$APP_DIR/src/cert_renewer" -type f -exec chmod 0644 {} +
 install -m 0644 "$PROJECT_DIR/systemd/cert-renewer.service" /etc/systemd/system/cert-renewer.service
 
 if [ ! -e "$CONFIG_PATH" ]; then
-  install -m 0600 "$PROJECT_DIR/examples/config.toml" "$CONFIG_PATH"
+  install -o root -g "$SERVICE_USER" -m 0640 "$PROJECT_DIR/examples/config.toml" "$CONFIG_PATH"
+else
+  chown root:"$SERVICE_USER" "$CONFIG_PATH"
+  chmod 0640 "$CONFIG_PATH"
 fi
+
+install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 \
+  /etc/letsencrypt /var/lib/letsencrypt /var/log/letsencrypt /var/lib/cert-renewer
 
 systemctl daemon-reload
 if [ "$ENABLE" = true ]; then

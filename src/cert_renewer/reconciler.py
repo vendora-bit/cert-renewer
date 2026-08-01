@@ -1,9 +1,9 @@
 import json
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Callable
 
 from .model import ServiceConfig
 from .status import StatusStore
@@ -56,7 +56,7 @@ class Reconciler:
                 result = self.manager.reconcile(cert)
                 outcome = CertificateOutcome(cert.name, "success", result.action,
                                              result.changed, result.expires_at.isoformat(), None)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - isolate failures by certificate
                 outcome = CertificateOutcome(cert.name, "failed", "failed", False,
                                              None, self._sanitize(str(exc)))
             outcomes.append(outcome)

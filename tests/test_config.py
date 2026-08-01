@@ -4,7 +4,6 @@ from pathlib import Path
 
 from cert_renewer.config import ConfigError, load_config
 
-
 BASE = """
 email = "ops@example.com"
 state_dir = "/var/lib/cert-renewer"
@@ -66,6 +65,38 @@ kind = "none"
     def test_command_reload_requires_argv(self):
         invalid = BASE.replace('argv = ["systemctl", "reload", "nginx"]', 'argv = []')
         with self.assertRaisesRegex(ConfigError, "argv"):
+            load_config(self.write(invalid))
+
+    def test_rejects_overlapping_destinations(self):
+        second = """
+[[certificates]]
+name = "other"
+domains = ["other.example.com"]
+token_file = "/run/secrets/other"
+destination = "/etc/nginx/certs/example/child"
+"""
+        with self.assertRaisesRegex(ConfigError, "overlapping certificate destinations"):
+            load_config(self.write(BASE.replace("/etc/nginx/certs/example", "/etc/nginx/certs/example") + second))
+
+    def test_rejects_destination_overlapping_state(self):
+        invalid = BASE.replace('/etc/nginx/certs/example', '/var/lib/cert-renewer/example')
+        with self.assertRaisesRegex(ConfigError, "overlaps managed directory"):
+            load_config(self.write(invalid))
+
+    def test_rejects_non_https_acme_server(self):
+        with self.assertRaisesRegex(ConfigError, "HTTPS URL"):
+            load_config(self.write('acme_server = "http://acme.test/directory"\n' + BASE))
+
+    def test_rejects_unsafe_docker_signal(self):
+        invalid = BASE.replace('kind = "command"', 'kind = "docker-signal"').replace(
+            'argv = ["systemctl", "reload", "nginx"]', 'container = "nginx"\nsignal = "HUP\\r\\nX"'
+        )
+        with self.assertRaisesRegex(ConfigError, "signal"):
+            load_config(self.write(invalid))
+
+    def test_rejects_renewal_threshold_over_sixty_days(self):
+        invalid = 'renewal_threshold_seconds = 5184001\n' + BASE
+        with self.assertRaisesRegex(ConfigError, "renewal_threshold_seconds"):
             load_config(self.write(invalid))
 
 

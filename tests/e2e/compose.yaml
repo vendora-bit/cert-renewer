@@ -1,0 +1,37 @@
+name: cert-renewer-e2e
+
+services:
+  pebble:
+    image: ghcr.io/letsencrypt/pebble:2.10.1@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199
+    command: ["-config", "/test/config/pebble-config.json", "-strict=false"]
+    environment:
+      PEBBLE_VA_ALWAYS_VALID: "1"
+      PEBBLE_VA_NOSLEEP: "1"
+      PEBBLE_WFE_NONCEREJECT: "0"
+
+  cert-renewer:
+    build:
+      context: ../..
+      dockerfile: tests/e2e/Dockerfile
+    depends_on:
+      - pebble
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    volumes:
+      - certbot-config:/etc/letsencrypt
+      - certbot-work:/var/lib/letsencrypt
+      - certbot-logs:/var/log/letsencrypt
+      - state:/var/lib/cert-renewer
+      - certificates:/certificates
+
+volumes:
+  certbot-config:
+  certbot-work:
+  certbot-logs:
+  state:
+  certificates:
