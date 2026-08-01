@@ -1,5 +1,12 @@
 FROM certbot/dns-cloudflare:v5.7.0@sha256:3bd60102cdef55294a44ffbff10bb54dd086803aa57d3f854933b756d305fbb8
 
+ARG VERSION=2.0.0
+LABEL org.opencontainers.image.title="cert-renewer" \
+      org.opencontainers.image.description="Safe multi-certificate Let's Encrypt reconciliation" \
+      org.opencontainers.image.source="https://github.com/vendora-bit/cert-renewer" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
 ENV PYTHONPATH=/app/src \
     PYTHONUNBUFFERED=1
 
@@ -19,4 +26,4 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
   CMD ["python", "-m", "cert_renewer", "health", "--config", "/config/config.toml"]
 
 ENTRYPOINT ["/usr/local/bin/cert-renewer-entrypoint"]
-CMD ["run", "--config", "/config/config.toml"]
+CMD ["run"]

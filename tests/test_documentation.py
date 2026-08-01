@@ -8,9 +8,9 @@ class DocumentationTests(unittest.TestCase):
     def test_readme_covers_public_contract(self):
         text = (ROOT / "README.md").read_text(encoding="utf-8")
         for phrase in (
-            "Cert Renewer v2", "Русский", "English", "[[certificates]]",
-            "Docker Compose", "systemd", "check", "once", "run", "health",
-            "Docker socket", "staging", "Cloudflare",
+            "Manage multiple independent", "Quickstart", "Docker Compose",
+            "systemd", "check", "once", "run", "health", "Docker socket",
+            "Cloudflare", "Why not use X?", "Roadmap", "Apache-2.0",
         ):
             self.assertIn(phrase, text)
 
@@ -19,9 +19,9 @@ class DocumentationTests(unittest.TestCase):
         for phrase in ("Recovery", "Восстановление", "Token rotation", "Ротация токена", "status.json"):
             self.assertIn(phrase, text)
 
-    def test_migration_maps_v1_variables(self):
+    def test_readme_links_to_each_supported_recipe(self):
         text = (ROOT / "README.md").read_text(encoding="utf-8")
-        for variable in ("CERTBOT_CERT_NAME", "CERTBOT_PRIMARY_DOMAIN", "CERTBOT_EXTRA_DOMAINS", "CLOUDFLARE_API_TOKEN_FILE"):
+        for variable in ("examples/nginx", "examples/haproxy", "examples/mailcow", "examples/proxmox", "examples/kubernetes", "examples/systemd"):
             self.assertIn(variable, text)
 
 

@@ -1,158 +1,156 @@
-# Cert Renewer v2
+# cert-renewer
 
-A small always-on service that issues and renews multiple independent Let's
-Encrypt certificates through Cloudflare DNS-01. It supports wildcard domains,
-atomic certificate installation, Docker Compose, and systemd.
+> Part of [Vendora Infrastructure](https://github.com/vendora-bit) — small, secure and production-minded tools for databases and self-hosted infrastructure.
 
-## English
+[![CI](https://github.com/vendora-bit/cert-renewer/actions/workflows/ci.yml/badge.svg)](https://github.com/vendora-bit/cert-renewer/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/vendora-bit/cert-renewer?display_name=release)](https://github.com/vendora-bit/cert-renewer/releases)
+[![Container](https://img.shields.io/badge/GHCR-container-2496ED?logo=docker&logoColor=white)](https://github.com/vendora-bit/cert-renewer/pkgs/container/cert-renewer)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-### Configuration
+**Manage multiple independent Let's Encrypt certificates from one safe Docker
+or systemd service.** Cloudflare DNS-01, atomic installation, health checks and
+reloads — without mounting the Docker socket by default.
 
-Copy `examples/config.toml`. One daemon can contain any number of certificate
-lineages:
+![A successful real configuration check](assets/cert-renewer-check.png)
 
-```toml
-email = "ops@example.com"
-state_dir = "/var/lib/cert-renewer"
-interval_seconds = 43200
-renewal_threshold_seconds = 2592000
+## Why cert-renewer
 
-[[certificates]]
-name = "example.com"
-domains = ["example.com", "*.example.com"]
-token_file = "/run/secrets/cloudflare-example"
-destination = "/certificates/example.com"
-propagation_seconds = 90
+One server often ends up with a Certbot container per site, cron state scattered
+across hosts and a privileged Docker socket just to reload a proxy. cert-renewer
+keeps each certificate lineage independent: a failed renewal or reload for one
+destination is recorded and retried without blocking the others.
 
-[certificates.reload]
-kind = "none"
+| Capability | cert-renewer | A plain `certbot renew` cron | One Certbot container per service |
+| --- | --- | --- | --- |
+| Independent certificate lineages | Yes | Usually shared, implicit state | Yes, but duplicated state |
+| Reissue when SANs change | Yes | Manual decision | Per-container configuration |
+| Atomic cert + key installation | Yes | Deployment script required | Deployment script required |
+| Persistent health/status | JSON + `health` | External monitoring required | Per-container monitoring |
+| Docker socket required by default | No | Varies | Often yes for reloads |
+| systemd deployment | Yes | DIY | DIY |
 
-[[certificates]]
-name = "example.kz"
-domains = ["example.kz", "www.example.kz"]
-token_file = "/run/secrets/cloudflare-kz"
-destination = "/certificates/example.kz"
+## Quickstart — validate in two minutes
 
-[certificates.reload]
-kind = "command"
-argv = ["systemctl", "reload", "nginx"]
-```
-
-Each token file contains only a Cloudflare API token with `Zone:DNS:Edit` and
-`Zone:Zone:Read` for the required zone. Set mode `0600`. Tokens are never placed
-in TOML, command arguments, status files, or logs. The temporary Certbot
-credentials file is removed after every invocation.
-
-Changing the configured SAN set triggers an immediate reissue even when the
-certificate is not close to expiry. Installations are stored under
-`destination/revisions/<digest>/`; the `destination/current` symlink is switched
-atomically only after both files are durable. Compatibility links remain at
-`destination/fullchain.pem` and `destination/privkey.pem`. Reload progress is
-persisted separately, so a failed reload is retried on the next cycle without
-requiring another renewal.
-
-Commands:
+Create a least-privilege Cloudflare API token with `Zone:DNS:Edit` and
+`Zone:Zone:Read` for the required zone. Do not use your Global API Key.
 
 ```bash
-python3 -m cert_renewer check --config /etc/cert-renewer/config.toml
-python3 -m cert_renewer once --config /etc/cert-renewer/config.toml
-python3 -m cert_renewer run --config /etc/cert-renewer/config.toml
-python3 -m cert_renewer health --config /etc/cert-renewer/config.toml
+git clone https://github.com/vendora-bit/cert-renewer.git
+cd cert-renewer
+cp docker/config.example.toml config.toml
+sudo install -d -o 65532 -g 65532 -m 0750 secrets certificates
+printf '%s' "$CLOUDFLARE_DNS_API_TOKEN" | sudo tee secrets/cloudflare-example >/dev/null
+sudo chown 65532:65532 secrets/cloudflare-example
+sudo chmod 0400 secrets/cloudflare-example
 ```
 
-`check` is read-only. `once` performs one cycle. `run` stays alive and retries.
-`health` validates the freshness and outcome of `status.json`.
-
-### Docker Compose
+Edit `config.toml`: set your email, domains and certificate destination. Then
+validate the full configuration without issuing anything:
 
 ```bash
-cp docker/config.example.toml docker/config.toml
-mkdir -p docker/secrets
-sudo install -o 65532 -g 65532 -m 0400 /path/to/token docker/secrets/cloudflare-example
-docker compose -f docker/compose.yaml up -d --build
-docker compose -f docker/compose.yaml logs -f cert-renewer
+docker run --rm \
+  -v "$PWD/config.toml:/config/config.toml:ro" \
+  -v "$PWD/secrets:/run/secrets:ro" \
+  -v "$PWD/certificates:/certificates" \
+  ghcr.io/vendora-bit/cert-renewer:latest check
 ```
 
-The default Docker Compose file does not mount the Docker socket. Use shared
-certificate volumes and let the reverse proxy reload externally. If the
-`docker-signal` reload action is required, explicitly add
-`-f docker/compose.socket.yaml` and set `DOCKER_GID` to the socket's host group
-ID. Docker socket access is effectively host-root access; use the override only
-on a trusted single-purpose host. The normal container runs as UID/GID 65532,
-with a read-only root filesystem, no Linux capabilities, and no-new-privileges.
-
-### systemd
+For a long-running service use the ready-made Compose recipe:
 
 ```bash
-sudo ./systemd/install.sh
-sudoedit /etc/cert-renewer/config.toml
-sudo PYTHONPATH=/opt/cert-renewer/src python3 -m cert_renewer check --config /etc/cert-renewer/config.toml
-sudo ./systemd/install.sh --enable
-systemctl status cert-renewer
+cp -R examples/docker-compose ./cert-renewer-compose
+cd cert-renewer-compose
+cp config.toml.example config.toml
+sudo install -d -o 65532 -g 65532 -m 0750 secrets
+# write a mode-0400, UID/GID-65532 token to secrets/cloudflare-example, then edit config.toml
+docker compose up -d
+docker compose logs -f cert-renewer
 ```
 
-The installer preserves an existing configuration.
-It runs the daemon as the dedicated `cert-renewer` user. Token files must be
-owned and readable by that user only. If destinations differ from
-`/etc/nginx/certs`, add them to a systemd drop-in `ReadWritePaths=` setting and
-grant the service user write access. Privileged reload commands should be
-exposed through a narrowly scoped helper; do not run the whole daemon as root.
+`check` only validates; `once` reconciles once; `run` loops; `health` returns
+zero only when the last successful cycle is recent enough. Read status from the
+configured `state_dir/status.json`.
 
-### Staging ACME test
+## Certificate layout and safety
 
-Before production issuance, set:
+Each issued lineage is installed below its configured `destination`:
 
-```toml
-acme_server = "https://acme-staging-v02.api.letsencrypt.org/directory"
+```text
+/certificates/example.com/
+├── current -> revisions/6b1f…
+├── fullchain.pem -> current/fullchain.pem
+├── privkey.pem -> current/privkey.pem
+└── revisions/6b1f…/{fullchain.pem,privkey.pem}
 ```
 
-Run `once`, inspect the resulting lineage, then remove the override and run
-`once` again for a trusted production certificate. See `RUNBOOK_TLS.md` for
-recovery and token rotation.
+The new revision is written and fsynced before `current` is switched. The
+compatibility links change only after the key/certificate pair is complete.
+Before any write, unsafe symlinks are rejected. Token files must be a regular
+single-line file with mode `0600` or stricter; temporary Certbot credentials are
+removed after every invocation.
 
-CI also performs an isolated end-to-end issuance against the official Pebble
-ACME test server. It exercises real Certbot account/order/finalization behavior,
-lineage validation, atomic installation, status, and health without external
-Cloudflare or Let's Encrypt credentials.
+## Recipes
 
-### Migration from v1
+| Deployment | What it demonstrates |
+| --- | --- |
+| [Nginx](examples/nginx/) | Shared certificate volume and graceful `nginx -s reload` |
+| [HAProxy](examples/haproxy/) | PEM bundle assembly from the atomic `current` revision |
+| [Mailcow](examples/mailcow/) | A conservative, host-managed certificate hand-off |
+| [Proxmox](examples/proxmox/) | Copying to Proxmox paths with ownership and reload safeguards |
+| [Kubernetes](examples/kubernetes/) | Read-only certificate consumer; when to use cert-manager instead |
+| [Docker Compose](examples/docker-compose/) | Socket-free long-running service |
+| [systemd](examples/systemd/) | Dedicated service user and system hardening |
 
-Stop the old container but preserve `/etc/letsencrypt`. Convert variables as
-follows: `CERTBOT_CERT_NAME` becomes `certificates.name`;
-`CERTBOT_PRIMARY_DOMAIN` and `CERTBOT_EXTRA_DOMAINS` become the
-`certificates.domains` array; `CLOUDFLARE_API_TOKEN_FILE` becomes
-`certificates.token_file`; `CERTBOT_RENEW_INTERVAL_SECONDS` becomes root
-`interval_seconds`; `CERTBOT_PROPAGATION_SECONDS` becomes
-`certificates.propagation_seconds`; `NGINX_CERT_TARGET_DIR` becomes
-`certificates.destination`; `NGINX_CONTAINER_NAME` and `DOCKER_SOCKET_PATH`
-become fields of `certificates.reload`. Add one `[[certificates]]` table for
-every former container, run `check`, test with staging ACME, then run `once`.
+## Why not use X?
 
-## Русский
+**Use Certbot directly** when one hostname and one deployment hook are all you
+need. It is the excellent ACME client underneath this project.
 
-Cert Renewer — постоянно работающий сервис для нескольких независимых
-сертификатов Let's Encrypt через Cloudflare DNS-01. Обычные и wildcard-домены
-задаются массивом `[[certificates]]` в TOML. Ошибка одного сертификата не
-останавливает остальные.
+**Use cert-manager** when certificates belong inside Kubernetes and should be
+represented as Kubernetes resources. This tool deliberately does not replace
+that control plane; its Kubernetes recipe is for a self-hosted service that
+consumes a certificate generated outside the cluster.
 
-Для Docker скопируйте `docker/config.example.toml` в `docker/config.toml`,
-положите токены с правами `0600` в `docker/secrets` и запустите:
+**Use a reverse-proxy-specific ACME integration** when that proxy owns every
+domain. cert-renewer is for centralizing independent lineages and destinations
+across several services, including services not run as containers.
+
+## Operations
 
 ```bash
-docker compose -f docker/compose.yaml up -d --build
+# one full reconciliation cycle
+docker compose -f examples/docker-compose/compose.yaml run --rm cert-renewer once
+
+# liveness/readiness-style probe
+docker compose -f examples/docker-compose/compose.yaml exec cert-renewer health
 ```
 
-Для systemd выполните `sudo ./systemd/install.sh`, настройте
-`/etc/cert-renewer/config.toml`, проверьте командой `check`, затем включите
-`sudo ./systemd/install.sh --enable`.
+The standard Docker deployment is unprivileged, read-only, capability-free and
+does not mount Docker's socket. The optional `docker/compose.socket.yaml`
+override exists only for trusted single-purpose hosts where a container signal
+is truly required; a Docker socket is effectively host-root access.
 
-Режимы: `check` проверяет окружение без выпуска; `once` выполняет один цикл;
-`run` работает постоянно; `health` проверяет свежесть `status.json`.
+See [RUNBOOK_TLS.md](RUNBOOK_TLS.md) for failure handling and recovery.
 
-Docker socket по умолчанию не подключён. Опциональный override нужен только для
-`docker-signal` и даёт контейнеру высокий уровень доступа к Docker daemon.
-Контейнер и systemd-сервис работают не от root. Новая пара ключ/сертификат
-собирается в отдельной revision и переключается атомарно; неудачный reload
-сохраняется как ожидающий и повторяется в следующем цикле.
-Перед production используйте staging ACME URL из раздела выше. Восстановление,
-ротация токена и диагностика описаны в `RUNBOOK_TLS.md`.
+## Roadmap
+
+- [x] Multi-lineage Cloudflare DNS-01 reconciliation and atomic installation
+- [x] Docker, Compose, systemd, health/status and local Pebble end-to-end tests
+- [ ] Additional DNS providers through reviewed, explicit adapters
+- [ ] Prometheus-friendly status exporter
+- [ ] More proxy recipes and a configuration migration command
+
+Ideas and small contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md)
+and the prepared [good first issues](.github/GOOD_FIRST_ISSUES.md).
+
+## Release and license
+
+The current code version is `2.0.0`; GitHub Releases and GHCR images are
+published by pushing a signed `v2.0.0` tag. See [CHANGELOG.md](CHANGELOG.md).
+
+Released under [Apache-2.0](LICENSE). Security reports are handled according to
+[SECURITY.md](SECURITY.md).
+
+## Related tools
+
+- [ddns-updater](https://github.com/vendora-bit/ddns-updater) — keep Cloudflare A records aligned with a changing public IPv4 address.

@@ -1,0 +1,39 @@
+name: cert-renewer-nginx
+
+services:
+  cert-renewer:
+    image: ghcr.io/vendora-bit/cert-renewer:2.0.0
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=16m,mode=1777]
+    volumes:
+      - ./config.toml:/config/config.toml:ro
+      - ./secrets:/run/secrets:ro
+      - certbot-config:/etc/letsencrypt
+      - certbot-work:/var/lib/letsencrypt
+      - certbot-logs:/var/log/letsencrypt
+      - state:/var/lib/cert-renewer
+      - certificates:/certificates
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/var/cache/nginx:size=16m,mode=1777, /var/run:size=4m,mode=1777]
+    ports: ["443:443"]
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - certificates:/etc/nginx/certificates:ro
+    depends_on: [cert-renewer]
+
+volumes:
+  certbot-config:
+  certbot-work:
+  certbot-logs:
+  state:
+  certificates:
+

@@ -42,7 +42,7 @@ class DistributionTests(unittest.TestCase):
         self.assertIn("--enable", installer)
 
     def test_repository_has_license_and_security_scanning(self):
-        self.assertIn("MIT License", self.text("LICENSE"))
+        self.assertIn("Apache License", self.text("LICENSE"))
         workflow = self.text(".github/workflows/ci.yml")
         for check in ("ruff check", "mypy", "bandit", "shellcheck", "trivy-action", "systemd-analyze verify"):
             self.assertIn(check, workflow)
@@ -52,6 +52,12 @@ class DistributionTests(unittest.TestCase):
         dockerignore = self.text(".dockerignore")
         self.assertIn("docker/secrets", dockerignore)
         self.assertIn("docker/config.toml", dockerignore)
+
+    def test_entrypoint_defaults_to_documented_container_config(self):
+        entrypoint = self.text("docker/entrypoint.sh")
+        self.assertIn("/config/config.toml", entrypoint)
+        self.assertIn('" --config "', entrypoint)
+        self.assertIn('" --config="', entrypoint)
 
 
 if __name__ == "__main__":

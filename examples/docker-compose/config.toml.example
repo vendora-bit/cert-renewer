@@ -1,0 +1,16 @@
+email = "ops@example.com"
+state_dir = "/var/lib/cert-renewer"
+interval_seconds = 43200
+renewal_threshold_seconds = 2592000
+retry_seconds = 300
+
+[[certificates]]
+name = "example.com"
+domains = ["example.com", "*.example.com"]
+token_file = "/run/secrets/cloudflare-example"
+destination = "/certificates/example.com"
+propagation_seconds = 90
+
+[certificates.reload]
+kind = "none"
+

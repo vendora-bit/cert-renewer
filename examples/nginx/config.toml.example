@@ -1,0 +1,11 @@
+email = "ops@example.com"
+
+[[certificates]]
+name = "example.com"
+domains = ["example.com", "*.example.com"]
+token_file = "/run/secrets/cloudflare-example"
+destination = "/certificates/example.com"
+
+[certificates.reload]
+kind = "none"
+
